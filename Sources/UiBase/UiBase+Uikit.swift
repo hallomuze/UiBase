@@ -21,7 +21,7 @@ public class Chain<OriginType> {
 
 protocol Chainable { }
 extension Chainable {
-    var chain: Chain<Self> { // 타입은 나 자신의 타입, 즉 프로토콜 타입(==Chainable을 뜻함)
+     public var chain: Chain<Self> { // 타입은 나 자신의 타입, 즉 프로토콜 타입(==Chainable을 뜻함)
         return Chain(origin: self) // 나 자신instance를 넣는다.
     }
 }
