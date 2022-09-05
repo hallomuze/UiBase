@@ -2,7 +2,7 @@
 //  File.swift
 //  
 //
-//  Created by sgk16 on 2022/09/05.
+//  Created by muze on 2022/09/05.
 //
 
 import Foundation
@@ -19,7 +19,7 @@ public class Chain<OriginType> {
     }
 }
 
-protocol Chainable { }
+public protocol Chainable { }
 extension Chainable {
      public var chain: Chain<Self> { // 타입은 나 자신의 타입, 즉 프로토콜 타입(==Chainable을 뜻함)
         return Chain(origin: self) // 나 자신instance를 넣는다.
