@@ -14,7 +14,7 @@ import Foundation
 public class Chain<OriginType> {
     public var origin: OriginType
     
-    init(origin: OriginType) {
+    public init(origin: OriginType) {
         self.origin = origin
     }
 }
