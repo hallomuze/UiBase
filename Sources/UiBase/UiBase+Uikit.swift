@@ -107,7 +107,7 @@ public extension Chain where OriginType: UIButton {
     }
 }
 
-extension Chain where OriginType: UITextField {
+public extension Chain where OriginType: UITextField {
     
     @discardableResult
     func placeholder(_ text: String) -> Chain {
@@ -134,7 +134,7 @@ extension Chain where OriginType: UITextField {
     }
 }
 
-extension Chain where OriginType: UISwitch {
+public extension Chain where OriginType: UISwitch {
     @discardableResult
     func setOn() -> Chain {
         origin.setOn(true, animated: true)
@@ -149,7 +149,7 @@ extension Chain where OriginType: UISwitch {
       
 }
  
-extension Chain where OriginType: UIStackView {
+public extension Chain where OriginType: UIStackView {
     
     @discardableResult
     func setVertical() -> Chain {
