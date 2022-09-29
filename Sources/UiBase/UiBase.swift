@@ -49,7 +49,7 @@ public protocol Letting { }
 public protocol Applying { }
 
 // =======================================
-extension Letting {
+public extension Letting {
     func lets(closure: (Self) -> Void) {
         closure(self)
     }
@@ -58,7 +58,7 @@ extension Letting {
 extension NSObject: Letting { }
 // ========================================
 
-extension Applying {
+public extension Applying {
     @discardableResult
     func apply(closure: (Self) -> Void) -> Self {
         closure(self)
