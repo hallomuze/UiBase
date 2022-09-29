@@ -41,6 +41,8 @@ class TViewController: UIViewController {
             .text("hahaha")
             .background(color: .brown)
             .autoLeftYCenter()
+        
+        self.tagString = ""
     }
 
 }

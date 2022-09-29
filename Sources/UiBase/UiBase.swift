@@ -29,21 +29,21 @@ extension Array {
  
 // Box_Closures
 // ========================================
-typealias VoidHandler = () -> Void
-typealias VoidIntHandler = () -> Int
-typealias VoidFloatHandler = () -> Float
-typealias VoidDoubleHandler = () -> Double
-typealias VoidStringHandler = () -> String
-typealias BoolVoidHandler = (_ isAction: Bool) -> Void
+public typealias VoidHandler = () -> Void
+public typealias VoidIntHandler = () -> Int
+public typealias VoidFloatHandler = () -> Float
+public typealias VoidDoubleHandler = () -> Double
+public typealias VoidStringHandler = () -> String
+public typealias BoolVoidHandler = (_ isAction: Bool) -> Void
  
-typealias TextHandler = (String) -> Void
-typealias BoolHandler = (Bool) -> Void
-typealias IntHandler = (Int) -> Void
-typealias DecimalHandler = (Decimal) -> Void
-typealias StringHandler = (String) -> Void
-typealias StringOptionalHandler = (String?) -> Void
-typealias UIntVoidHandler = (UInt) -> Void
-typealias StringStringHandler = (String) -> String
+public typealias TextHandler = (String) -> Void
+public typealias BoolHandler = (Bool) -> Void
+public typealias IntHandler = (Int) -> Void
+public typealias DecimalHandler = (Decimal) -> Void
+public typealias StringHandler = (String) -> Void
+public typealias StringOptionalHandler = (String?) -> Void
+public typealias UIntVoidHandler = (UInt) -> Void
+public typealias StringStringHandler = (String) -> String
  
 public protocol Letting { }
 public protocol Applying { }
