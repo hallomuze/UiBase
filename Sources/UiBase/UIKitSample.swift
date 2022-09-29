@@ -33,6 +33,14 @@ class TViewController: UIViewController {
             .text("hahaha")
             .background(color: .brown)
             .autoLeftYCenter()
+        
+        let chainedLabel = UILabel()
+         
+        chainedLabel.chain
+            .add(to: self.view)
+            .text("hahaha")
+            .background(color: .brown)
+            .autoLeftYCenter()
     }
 
 }
