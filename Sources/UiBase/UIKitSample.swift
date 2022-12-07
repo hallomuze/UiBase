@@ -6,7 +6,6 @@
 //
  
 import UIKit
-import UiBase
 
 class TViewController: UIViewController {
 
