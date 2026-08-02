@@ -5,6 +5,7 @@
 //  Created by muze on 2022/12/07.
 //
 
+#if canImport(UIKit)
 import UIKit
 
 public class UColorViewController: UIViewController {
@@ -25,3 +26,4 @@ public class UColorViewController: UIViewController {
         view.backgroundColor = backColor
     }
 }
+#endif

@@ -5,9 +5,10 @@
 //  Created by muze on 2022/09/05.
 //
 
+#if canImport(UIKit)
 import Foundation
 import UIKit
- 
+
 // chain
 import Foundation
 
@@ -814,3 +815,4 @@ public extension UIImage {
        return img
    }
 }
+#endif

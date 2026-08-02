@@ -5,6 +5,7 @@
 //  Created by muze on 2022/09/29.
 //
  
+#if canImport(UIKit)
 import UIKit
 
 class TViewController: UIViewController {
@@ -45,3 +46,4 @@ class TViewController: UIViewController {
     }
 
 }
+#endif

@@ -7,7 +7,8 @@ let package = Package(
     name: "UiBase",
     
     platforms: [
-        .iOS(.v17)
+        .iOS(.v17),
+        .macOS(.v14)
     ],
     
     products: [

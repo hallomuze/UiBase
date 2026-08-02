@@ -5,6 +5,7 @@
 //  Created by muze on 2022/09/29.
 //
 
+#if canImport(UIKit)
 import UIKit
 public extension UIViewController {
     func removeChild(_ tagToRemove: String) {
@@ -31,3 +32,4 @@ public extension UIViewController {
         }
     }
 }
+#endif
