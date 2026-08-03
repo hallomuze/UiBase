@@ -73,17 +73,21 @@ public struct EvCalendarView: View {
     @State private var displayedMonth: Date
     @State private var selectedDate: Date?
     @State private var months: [Date]
+    @State private var scrollTargetID: Date?
 
     private let calendar = Calendar.current
     private static let rowHeight: CGFloat = DayCell.minHeight
     private static let rowSpacing: CGFloat = 2
     private static let monthLabelHeight: CGFloat = 24
-    private static let initialPastMonths = 24
-    private static let initialFutureMonths = 24
+    private static let defaultPastMonths = 12
+    private static let initialFutureMonths = 12
     private static let extendFutureBy = 12
+    private static let pageHeight: CGFloat = gridHeight(forRows: 6) + monthLabelHeight
 
     /// - Parameters:
     ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
+    ///   - minStartMonth: 과거로 이동 가능한 최소 달(이 달까지만 스크롤 가능). nil이면 최소
+    ///     `defaultPastMonths`(12개월) 전까지는 항상 이동 가능
     ///   - items: 표시할 이벤트 목록
     ///   - maxTitlesPerDay: 셀 하나에 표시할 최대 타이틀 개수 (2~3 권장, 기본 3)
     ///   - swipeAxis: 달 이동 스와이프 방향 (기본 세로 — 애플 캘린더처럼 여러 달이 이어붙어
@@ -94,6 +98,7 @@ public struct EvCalendarView: View {
     ///   - onDateTap: 날짜 탭 콜백
     public init(
         initialMonth: Date = Date(),
+        minStartMonth: Date? = nil,
         items: [EvCalendarItem],
         maxTitlesPerDay: Int = 3,
         swipeAxis: EvCalendarSwipeAxis = .vertical,
@@ -113,70 +118,72 @@ public struct EvCalendarView: View {
         let cal = Calendar.current
         let start = cal.date(from: cal.dateComponents([.year, .month], from: initialMonth)) ?? initialMonth
         _displayedMonth = State(initialValue: start)
-        let initialMonths = (-Self.initialPastMonths...Self.initialFutureMonths).compactMap {
+        _scrollTargetID = State(initialValue: start)
+
+        let pastMonths: Int
+        if let minStartMonth {
+            let clampedMin = cal.date(from: cal.dateComponents([.year, .month], from: minStartMonth)) ?? minStartMonth
+            let diff = cal.dateComponents([.month], from: clampedMin, to: start).month ?? Self.defaultPastMonths
+            pastMonths = max(0, diff)
+        } else {
+            pastMonths = Self.defaultPastMonths
+        }
+
+        let initialMonths = (-pastMonths...Self.initialFutureMonths).compactMap {
             cal.date(byAdding: .month, value: $0, to: start)
         }
         _months = State(initialValue: initialMonths)
     }
 
     public var body: some View {
-        if swipeAxis == .vertical {
-            ScrollViewReader { proxy in
-                VStack(spacing: 8) {
-                    header(proxy: proxy)
-                    weekdayHeader
-                    pagingScroll(proxy: proxy)
-                }
-                .padding(.horizontal, 8)
-                .onAppear {
-                    proxy.scrollTo(displayedMonth, anchor: .top)
-                }
-            }
-        } else {
-            VStack(spacing: 8) {
-                header(proxy: nil)
-                weekdayHeader
+        VStack(spacing: 8) {
+            header
+            weekdayHeader
+            if swipeAxis == .vertical {
+                pagingScroll
+            } else {
                 monthGrid
                     .gesture(swipeGesture)
             }
-            .padding(.horizontal, 8)
         }
+        .padding(.horizontal, 8)
     }
 
-    // MARK: 세로 페이징 스크롤 (여러 달을 이어붙여 달 단위로 스냅)
+    // MARK: 세로 페이징 스크롤 (여러 달을 균일한 높이로 이어붙여 달 단위로 스냅)
 
-    private func pagingScroll(proxy: ScrollViewProxy) -> some View {
-        let layout = monthLayout
-        return ScrollView(showsIndicators: false) {
+    private var pagingScroll: some View {
+        ScrollView(showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                ForEach(Array(months.enumerated()), id: \.element) { index, month in
-                    monthBlock(for: month, showLabel: index > 0)
+                ForEach(months, id: \.self) { month in
+                    monthBlock(for: month)
+                        .frame(height: Self.pageHeight, alignment: .top)
                         .id(month)
                 }
             }
+            .scrollTargetLayout()
         }
-        .frame(height: Self.gridHeight(forRows: 6))
-        .scrollTargetBehavior(MonthSnapBehavior(offsets: layout.map(\.y)))
-        .onScrollGeometryChange(for: CGFloat.self) { geo in
-            geo.contentOffset.y
-        } action: { _, newY in
-            updateDisplayedMonth(forOffsetY: newY, layout: layout)
-            extendRangeIfNeeded(forOffsetY: newY, layout: layout)
+        .frame(height: Self.pageHeight)
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $scrollTargetID, anchor: .top)
+        .onChange(of: scrollTargetID) { _, newID in
+            guard let newID else { return }
+            if newID != displayedMonth { displayedMonth = newID }
+            extendRangeIfNeeded(current: newID)
         }
     }
 
-    private func monthBlock(for monthStart: Date, showLabel: Bool) -> some View {
-        let days = daysInGrid(for: monthStart)
-        return VStack(alignment: .leading, spacing: 4) {
-            if showLabel {
-                Text(monthTitleProvider?(monthStart) ?? Self.defaultMonthTitle(monthStart, calendar: calendar))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(style.map { AnyShapeStyle($0.accent) } ?? AnyShapeStyle(.primary))
-                    .padding(.leading, 4)
-                    .frame(height: Self.monthLabelHeight, alignment: .bottomLeading)
-            }
+    private func monthBlock(for monthStart: Date) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // 첫 달도 같은 높이를 갖도록 항상 라벨 자리를 확보(균일 페이징에 필요) —
+            // 큰 타이틀과 중복되지 않게 이번 인라인 라벨은 두 번째 달부터만 텍스트를 채운다.
+            Text(calendar.isDate(monthStart, equalTo: displayedMonth, toGranularity: .month)
+                 ? "" : (monthTitleProvider?(monthStart) ?? Self.defaultMonthTitle(monthStart, calendar: calendar)))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(style.map { AnyShapeStyle($0.accent) } ?? AnyShapeStyle(.primary))
+                .padding(.leading, 4)
+                .frame(height: Self.monthLabelHeight, alignment: .bottomLeading)
             LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
-                ForEach(Array(days.enumerated()), id: \.offset) { _, date in
+                ForEach(Array(daysInGrid(for: monthStart).enumerated()), id: \.offset) { _, date in
                     if let date {
                         DayCell(
                             date: date,
@@ -198,37 +205,14 @@ public struct EvCalendarView: View {
         }
     }
 
-    /// 각 달의 시작 y좌표(스냅 지점) 테이블 — 실제 렌더 없이 달력 수학만으로 미리 계산
-    private var monthLayout: [(month: Date, y: CGFloat)] {
-        var result: [(Date, CGFloat)] = []
-        var y: CGFloat = 0
-        for (index, month) in months.enumerated() {
-            result.append((month, y))
-            let labelHeight: CGFloat = index > 0 ? Self.monthLabelHeight : 0
-            y += labelHeight + Self.gridHeight(forRows: rowCount(for: month))
-        }
-        return result
-    }
-
-    private func updateDisplayedMonth(forOffsetY offsetY: CGFloat, layout: [(month: Date, y: CGFloat)]) {
-        guard !layout.isEmpty else { return }
-        // 상단(offsetY)을 지난 마지막 달 = 현재 화면 상단에 걸린 달
-        var current = layout[0].month
-        for entry in layout {
-            if entry.y <= offsetY + 1 { current = entry.month } else { break }
-        }
-        if current != displayedMonth {
-            displayedMonth = current
-        }
-    }
-
-    /// 스크롤이 앞으로 끝에 가까워지면 미래 방향으로 달을 더 이어붙인다(과거 방향은 초기
-    /// 범위만 제공 — 무한 prepend는 오프셋 보정이 필요해 이번 구현 범위에서 제외)
-    private func extendRangeIfNeeded(forOffsetY offsetY: CGFloat, layout: [(month: Date, y: CGFloat)]) {
-        guard let lastEntry = layout.last, let lastMonth = months.last else { return }
-        let remaining = lastEntry.y - offsetY
-        let threshold = Self.gridHeight(forRows: 6) * 3
-        guard remaining < threshold else { return }
+    /// 스크롤이 미래 방향 끝에 가까워지면 달을 더 이어붙인다(과거 방향은 초기/`minStartMonth`
+    /// 범위로 고정 — 요청한 "최소 N개월 전까지"는 초기 배열에 이미 포함돼 있으므로 충분함)
+    private func extendRangeIfNeeded(current: Date) {
+        guard let lastMonth = months.last,
+              let idx = months.firstIndex(where: { calendar.isDate($0, equalTo: current, toGranularity: .month) })
+        else { return }
+        let remaining = months.count - 1 - idx
+        guard remaining <= 3 else { return }
         let newMonths = (1...Self.extendFutureBy).compactMap {
             calendar.date(byAdding: .month, value: $0, to: lastMonth)
         }
@@ -252,14 +236,14 @@ public struct EvCalendarView: View {
 
     // MARK: 상단 헤더 (이전/다음 달 이동 + 우측 액세서리)
 
-    private func header(proxy: ScrollViewProxy?) -> some View {
+    private var header: some View {
         HStack(spacing: 12) {
-            Button { jump(by: -1, proxy: proxy) } label: {
+            Button { jump(by: -1) } label: {
                 Image(systemName: "chevron.left")
             }
             Text(monthTitle)
                 .font(.headline)
-            Button { jump(by: 1, proxy: proxy) } label: {
+            Button { jump(by: 1) } label: {
                 Image(systemName: "chevron.right")
             }
             Spacer()
@@ -275,16 +259,11 @@ public struct EvCalendarView: View {
         .foregroundStyle(style.map { AnyShapeStyle($0.text) } ?? AnyShapeStyle(.primary))
     }
 
-    private func jump(by value: Int, proxy: ScrollViewProxy?) {
+    private func jump(by value: Int) {
         guard let target = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
-        if let proxy {
-            if !months.contains(where: { calendar.isDate($0, equalTo: target, toGranularity: .month) }) {
-                // 아직 범위 밖(과거로 더 이동)이면 그냥 무시 — 초기 범위(±24개월) 밖은 지원하지 않음
-                return
-            }
-            withAnimation {
-                proxy.scrollTo(target, anchor: .top)
-            }
+        if swipeAxis == .vertical {
+            guard months.contains(where: { calendar.isDate($0, equalTo: target, toGranularity: .month) }) else { return }
+            withAnimation { scrollTargetID = target }
         } else {
             withAnimation(.easeInOut) { moveMonth(by: value) }
         }
@@ -312,7 +291,7 @@ public struct EvCalendarView: View {
 
     private var monthGrid: some View {
         LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
-            ForEach(Array(daysInGrid(for: displayedMonth, padTo42: true).enumerated()), id: \.offset) { _, date in
+            ForEach(Array(daysInGrid(for: displayedMonth).enumerated()), id: \.offset) { _, date in
                 if let date {
                     DayCell(
                         date: date,
@@ -354,8 +333,8 @@ public struct EvCalendarView: View {
         return Array(symbols[first...] + symbols[..<first])
     }
 
-    /// 해당 월의 날짜들(달력 수학). padTo42면 6주(42칸) 고정, 아니면 실제 주 수만큼만 반환.
-    private func daysInGrid(for monthStart: Date, padTo42: Bool = false) -> [Date?] {
+    /// 해당 월의 날짜들. 항상 6주(42칸) 고정 — 모든 페이지가 같은 높이여야 균일 페이징이 정확함.
+    private func daysInGrid(for monthStart: Date) -> [Date?] {
         guard let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
 
         let firstWeekday = calendar.component(.weekday, from: monthStart)
@@ -366,22 +345,11 @@ public struct EvCalendarView: View {
             days.append(calendar.date(byAdding: .day, value: day - 1, to: monthStart))
         }
 
-        if padTo42 {
-            let totalCells = 42
-            if days.count < totalCells {
-                days.append(contentsOf: Array(repeating: nil, count: totalCells - days.count))
-            }
-        } else {
-            let remainder = days.count % 7
-            if remainder != 0 {
-                days.append(contentsOf: Array(repeating: nil, count: 7 - remainder))
-            }
+        let totalCells = 42
+        if days.count < totalCells {
+            days.append(contentsOf: Array(repeating: nil, count: totalCells - days.count))
         }
         return days
-    }
-
-    private func rowCount(for monthStart: Date) -> Int {
-        daysInGrid(for: monthStart).count / 7
     }
 
     private static func gridHeight(forRows rows: Int) -> CGFloat {
@@ -396,39 +364,6 @@ public struct EvCalendarView: View {
         if let newMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) {
             displayedMonth = newMonth
         }
-    }
-}
-
-// MARK: - 달 스냅 (비균일 페이징) — ScrollTargetBehavior 커스텀 구현
-
-private struct MonthSnapBehavior: ScrollTargetBehavior {
-    let offsets: [CGFloat]   // 오름차순 정렬된 각 달의 시작 y좌표
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        guard !offsets.isEmpty else { return }
-        let proposedY = target.rect.minY
-        let originalY = context.originalTarget.rect.minY
-        let travelingForward = proposedY >= originalY
-
-        // 관성으로 여러 달을 건너뛸 수 있으므로 항상 "가장 가까운 시작 지점"으로 스냅
-        var nearest = offsets[0]
-        var smallestDiff = abs(offsets[0] - proposedY)
-        for y in offsets {
-            let diff = abs(y - proposedY)
-            if diff < smallestDiff {
-                smallestDiff = diff
-                nearest = y
-            }
-        }
-
-        // 너무 조금만 움직였을 때는(같은 달 안) 원래 달의 시작 지점으로 되돌아가도록 보정
-        if travelingForward, nearest < originalY, let next = offsets.first(where: { $0 > originalY - 1 }) {
-            nearest = next
-        } else if !travelingForward, nearest > originalY, let prev = offsets.last(where: { $0 < originalY + 1 }) {
-            nearest = prev
-        }
-
-        target.rect.origin.y = nearest
     }
 }
 
