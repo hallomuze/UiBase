@@ -222,6 +222,13 @@ public struct EvCalendarView: View {
         for day in dayRange {
             days.append(calendar.date(byAdding: .day, value: day - 1, to: monthStart))
         }
+
+        // 항상 6주(42칸)로 맞춰서 월마다 grid 행 수가 달라지지 않게 한다.
+        // 그래야 좌우 스와이프로 달을 넘길 때 컨테이너 높이가 바뀌며 덜컹이는 현상이 없어진다.
+        let totalCells = 42
+        if days.count < totalCells {
+            days.append(contentsOf: Array(repeating: nil, count: totalCells - days.count))
+        }
         return days
     }
 
