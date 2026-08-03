@@ -59,6 +59,20 @@ public enum EvCalendarSwipeAxis {
     case none, horizontal, vertical
 }
 
+/// `EvCalendarView`에 "오늘로 이동" 같은 외부 명령을 보낼 때 쓰는 컨트롤러.
+/// SwiftUI View는 값 타입이라 외부에서 직접 메서드를 호출할 수 없으므로, 이 클래스 인스턴스를
+/// 만들어 `EvCalendarView(controller:)`에 넘긴 뒤 `controller.moveToToday()`를 호출하면 된다.
+public final class EvCalendarController: ObservableObject {
+    @Published var jumpToTodayToken = 0
+
+    public init() {}
+
+    /// 오늘이 있는 달로 즉시 이동
+    public func moveToToday() {
+        jumpToTodayToken += 1
+    }
+}
+
 // MARK: - EvCalendarView
 
 public struct EvCalendarView: View {
@@ -74,6 +88,7 @@ public struct EvCalendarView: View {
     @State private var selectedDate: Date?
     @State private var months: [Date]
     @State private var scrollTargetID: Date?
+    @ObservedObject private var controller: EvCalendarController
 
     private let calendar = Calendar.current
     private static let rowHeight: CGFloat = DayCell.minHeight
@@ -95,6 +110,8 @@ public struct EvCalendarView: View {
     ///     기존처럼 그리드 한 장만 보여주고 좌우 스와이프 또는 버튼으로만 이동)
     ///   - monthTitle: 헤더 좌측 타이틀 커스텀 (기본: "yyyy MMMM")
     ///   - headerAccessory: 헤더 우측에 표시할 텍스트 (예: 월 합계). nil이면 표시 안 함
+    ///   - controller: "오늘로 이동" 등 외부 명령을 보낼 `EvCalendarController`. 안 넘기면
+    ///     내부적으로 하나 생성(외부에서 제어할 필요 없을 때는 신경 쓰지 않아도 됨).
     ///   - onDateTap: 날짜 탭 콜백
     public init(
         initialMonth: Date = Date(),
@@ -105,6 +122,7 @@ public struct EvCalendarView: View {
         style: EvCalendarStyle? = nil,
         monthTitle: ((Date) -> String)? = nil,
         headerAccessory: ((Date) -> String)? = nil,
+        controller: EvCalendarController = EvCalendarController(),
         onDateTap: ((Date) -> Void)? = nil
     ) {
         self.items = items
@@ -114,6 +132,7 @@ public struct EvCalendarView: View {
         self.monthTitleProvider = monthTitle
         self.headerAccessory = headerAccessory
         self.onDateTap = onDateTap
+        _controller = ObservedObject(wrappedValue: controller)
 
         let cal = Calendar.current
         let start = cal.date(from: cal.dateComponents([.year, .month], from: initialMonth)) ?? initialMonth
@@ -138,15 +157,38 @@ public struct EvCalendarView: View {
     public var body: some View {
         VStack(spacing: 8) {
             header
-            weekdayHeader
-            if swipeAxis == .vertical {
-                pagingScroll
-            } else {
-                monthGrid
-                    .gesture(swipeGesture)
+            VStack(spacing: 0) {
+                weekdayHeader
+                if swipeAxis == .vertical {
+                    pagingScroll
+                } else {
+                    monthGrid
+                        .gesture(swipeGesture)
+                }
             }
         }
-        .padding(.horizontal, 8)
+        .onChange(of: controller.jumpToTodayToken) { _, _ in
+            jumpToToday()
+        }
+    }
+
+    private func jumpToToday() {
+        let today = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
+        if swipeAxis == .vertical {
+            if !months.contains(where: { calendar.isDate($0, equalTo: today, toGranularity: .month) }) {
+                if today > months.last ?? today {
+                    let newMonths = stride(from: 1, through: Self.extendFutureBy, by: 1).compactMap {
+                        calendar.date(byAdding: .month, value: $0, to: months.last ?? today)
+                    }
+                    months.append(contentsOf: newMonths)
+                } else {
+                    return
+                }
+            }
+            withAnimation { scrollTargetID = today }
+        } else {
+            withAnimation(.easeInOut) { displayedMonth = today }
+        }
     }
 
     // MARK: 세로 페이징 스크롤 (여러 달을 균일한 높이로 이어붙여 달 단위로 스냅)
