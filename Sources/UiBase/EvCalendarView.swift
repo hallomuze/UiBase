@@ -233,6 +233,7 @@ public struct EvCalendarView: View {
                             maxTitles: maxTitlesPerDay,
                             isToday: calendar.isDateInToday(date),
                             isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                            isDimmed: !calendar.isDate(date, equalTo: monthStart, toGranularity: .month),
                             style: style
                         )
                         .onTapGesture {
@@ -341,6 +342,7 @@ public struct EvCalendarView: View {
                         maxTitles: maxTitlesPerDay,
                         isToday: calendar.isDateInToday(date),
                         isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                        isDimmed: !calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month),
                         style: style
                     )
                     .onTapGesture {
@@ -376,6 +378,8 @@ public struct EvCalendarView: View {
     }
 
     /// 해당 월의 날짜들. 항상 6주(42칸) 고정 — 모든 페이지가 같은 높이여야 균일 페이징이 정확함.
+    /// 5주짜리 달이라 마지막에 남는 칸은 완전히 비워두지 않고 다음 달 날짜로 채운다(옅게 표시해서
+    /// 빈 공간처럼 보이지 않게 함 — 앞쪽 빈 칸은 그대로 둠, 보통 훨씬 적어서 눈에 덜 띔).
     private func daysInGrid(for monthStart: Date) -> [Date?] {
         guard let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
 
@@ -383,13 +387,16 @@ public struct EvCalendarView: View {
         let leadingBlanks = (firstWeekday - calendar.firstWeekday + 7) % 7
 
         var days: [Date?] = Array(repeating: nil, count: leadingBlanks)
+        var lastDay = monthStart
         for day in dayRange {
-            days.append(calendar.date(byAdding: .day, value: day - 1, to: monthStart))
+            lastDay = calendar.date(byAdding: .day, value: day - 1, to: monthStart) ?? lastDay
+            days.append(lastDay)
         }
 
         let totalCells = 42
-        if days.count < totalCells {
-            days.append(contentsOf: Array(repeating: nil, count: totalCells - days.count))
+        while days.count < totalCells {
+            lastDay = calendar.date(byAdding: .day, value: 1, to: lastDay) ?? lastDay
+            days.append(lastDay)
         }
         return days
     }
@@ -419,6 +426,7 @@ private struct DayCell: View {
     let maxTitles: Int
     let isToday: Bool
     let isSelected: Bool
+    var isDimmed: Bool = false
     let style: EvCalendarStyle?
 
     private var dayNumber: String {
@@ -477,5 +485,6 @@ private struct DayCell: View {
                         lineWidth: isSelected ? 2 : 0.5)
         )
         .contentShape(Rectangle())
+        .opacity(isDimmed ? 0.35 : 1)
     }
 }
