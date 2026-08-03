@@ -59,6 +59,7 @@ public struct EvCalendarStyle {
 public struct EvCalendarView: View {
     private let items: [EvCalendarItem]
     private let maxTitlesPerDay: Int
+    private let swipe: Bool
     private let style: EvCalendarStyle?
     private let monthTitleProvider: ((Date) -> String)?
     private let headerAccessory: ((Date) -> String)?
@@ -73,6 +74,7 @@ public struct EvCalendarView: View {
     ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
     ///   - items: 표시할 이벤트 목록
     ///   - maxTitlesPerDay: 셀 하나에 표시할 최대 타이틀 개수 (2~3 권장, 기본 3)
+    ///   - swipe: 좌우 스와이프로 월 이동 가능 여부 (기본 true)
     ///   - monthTitle: 헤더 좌측 타이틀 커스텀 (기본: "yyyy MMMM")
     ///   - headerAccessory: 헤더 우측에 표시할 텍스트 (예: 월 합계). nil이면 표시 안 함
     ///   - onDateTap: 날짜 탭 콜백
@@ -80,6 +82,7 @@ public struct EvCalendarView: View {
         initialMonth: Date = Date(),
         items: [EvCalendarItem],
         maxTitlesPerDay: Int = 3,
+        swipe: Bool = true,
         style: EvCalendarStyle? = nil,
         monthTitle: ((Date) -> String)? = nil,
         headerAccessory: ((Date) -> String)? = nil,
@@ -87,6 +90,7 @@ public struct EvCalendarView: View {
     ) {
         self.items = items
         self.maxTitlesPerDay = max(1, maxTitlesPerDay)
+        self.swipe = swipe
         self.style = style
         self.monthTitleProvider = monthTitle
         self.headerAccessory = headerAccessory
@@ -99,8 +103,24 @@ public struct EvCalendarView: View {
             header
             weekdayHeader
             monthGrid
+                .gesture(swipeGesture)
         }
         .padding(.horizontal, 8)
+    }
+
+    // MARK: 좌우 스와이프 (좌: 다음 달, 우: 이전 달)
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                guard swipe else { return }
+                let horizontal = value.translation.width
+                let vertical = value.translation.height
+                guard abs(horizontal) > abs(vertical) else { return }
+                withAnimation(.easeInOut) {
+                    moveMonth(by: horizontal < 0 ? 1 : -1)
+                }
+            }
     }
 
     // MARK: 상단 헤더 (이전/다음 달 이동 + 우측 액세서리)
