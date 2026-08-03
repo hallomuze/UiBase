@@ -97,6 +97,7 @@ public struct EvCalendarView: View {
     private static let defaultPastMonths = 12
     private static let initialFutureMonths = 12
     private static let extendFutureBy = 12
+    private static let pageHeight: CGFloat = gridHeight(forRows: 6) + monthLabelHeight
 
     /// - Parameters:
     ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
@@ -190,22 +191,21 @@ public struct EvCalendarView: View {
         }
     }
 
-    // MARK: 세로 페이징 스크롤 (달마다 실제 높이(5주/6주)만큼만 차지 — 남는 공백 없음)
+    // MARK: 세로 페이징 스크롤 (여러 달을 균일한 높이로 이어붙여 달 단위로 스냅)
 
     private var pagingScroll: some View {
-        let layout = monthLayout
-        return ScrollView(showsIndicators: false) {
+        ScrollView(showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 ForEach(months, id: \.self) { month in
                     monthBlock(for: month)
+                        .frame(height: Self.pageHeight, alignment: .top)
                         .id(month)
                 }
             }
             .scrollTargetLayout()
         }
-        .frame(height: currentViewportHeight)
-        .animation(.default, value: currentViewportHeight)
-        .scrollTargetBehavior(MonthSnapBehavior(offsets: layout.map(\.y)))
+        .frame(height: Self.pageHeight)
+        .scrollTargetBehavior(.paging)
         .scrollPosition(id: $scrollTargetID, anchor: .top)
         .onChange(of: scrollTargetID) { _, newID in
             guard let newID else { return }
@@ -214,21 +214,18 @@ public struct EvCalendarView: View {
         }
     }
 
-    /// 화면에 할당하는 세로 공간 = 현재 달의 실제 높이(달마다 다름). 이래야 짧은 달(5주) 아래
-    /// 불필요한 빈 공간이 남지 않고, 캘린더 바로 아래 배치한 다른 뷰가 딱 붙게 된다.
-    private var currentViewportHeight: CGFloat {
-        Self.gridHeight(forRows: rowCount(for: displayedMonth)) + Self.monthLabelHeight
-    }
-
     private func monthBlock(for monthStart: Date) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(monthTitleProvider?(monthStart) ?? Self.defaultMonthTitle(monthStart, calendar: calendar))
+            // 첫 달도 같은 높이를 갖도록 항상 라벨 자리를 확보(균일 페이징에 필요) —
+            // 큰 타이틀과 중복되지 않게 이번 인라인 라벨은 두 번째 달부터만 텍스트를 채운다.
+            Text(calendar.isDate(monthStart, equalTo: displayedMonth, toGranularity: .month)
+                 ? "" : (monthTitleProvider?(monthStart) ?? Self.defaultMonthTitle(monthStart, calendar: calendar)))
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(style.map { AnyShapeStyle($0.accent) } ?? AnyShapeStyle(.primary))
                 .padding(.leading, 4)
                 .frame(height: Self.monthLabelHeight, alignment: .bottomLeading)
             LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
-                ForEach(Array(daysInGrid(for: monthStart, padTo42: false).enumerated()), id: \.offset) { _, date in
+                ForEach(Array(daysInGrid(for: monthStart).enumerated()), id: \.offset) { _, date in
                     if let date {
                         DayCell(
                             date: date,
@@ -236,6 +233,7 @@ public struct EvCalendarView: View {
                             maxTitles: maxTitlesPerDay,
                             isToday: calendar.isDateInToday(date),
                             isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                            isDimmed: !calendar.isDate(date, equalTo: monthStart, toGranularity: .month),
                             style: style
                         )
                         .onTapGesture {
@@ -248,17 +246,6 @@ public struct EvCalendarView: View {
                 }
             }
         }
-    }
-
-    /// 각 달의 시작 y좌표(스냅 지점) 테이블 — 실제 렌더 없이 달력 수학만으로 미리 계산
-    private var monthLayout: [(month: Date, y: CGFloat)] {
-        var result: [(Date, CGFloat)] = []
-        var y: CGFloat = 0
-        for month in months {
-            result.append((month, y))
-            y += Self.monthLabelHeight + Self.gridHeight(forRows: rowCount(for: month))
-        }
-        return result
     }
 
     /// 스크롤이 미래 방향 끝에 가까워지면 달을 더 이어붙인다(과거 방향은 초기/`minStartMonth`
@@ -347,7 +334,7 @@ public struct EvCalendarView: View {
 
     private var monthGrid: some View {
         LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
-            ForEach(Array(daysInGrid(for: displayedMonth, padTo42: true).enumerated()), id: \.offset) { _, date in
+            ForEach(Array(daysInGrid(for: displayedMonth).enumerated()), id: \.offset) { _, date in
                 if let date {
                     DayCell(
                         date: date,
@@ -355,6 +342,7 @@ public struct EvCalendarView: View {
                         maxTitles: maxTitlesPerDay,
                         isToday: calendar.isDateInToday(date),
                         isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                        isDimmed: !calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month),
                         style: style
                     )
                     .onTapGesture {
@@ -389,28 +377,28 @@ public struct EvCalendarView: View {
         return Array(symbols[first...] + symbols[..<first])
     }
 
-    /// 해당 월의 날짜들. padTo42면 6주(42칸) 고정(.horizontal/.none 모드용), 아니면 실제
-    /// 주 수(5주 또는 6주)만큼만 반환해 달마다 그리드 높이가 다르게 한다.
-    private func daysInGrid(for monthStart: Date, padTo42: Bool) -> [Date?] {
+    /// 해당 월의 날짜들. 항상 6주(42칸) 고정 — 모든 페이지가 같은 높이여야 균일 페이징이 정확함.
+    /// 5주짜리 달이라 마지막에 남는 칸은 완전히 비워두지 않고 다음 달 날짜로 채운다(옅게 표시해서
+    /// 빈 공간처럼 보이지 않게 함 — 앞쪽 빈 칸은 그대로 둠, 보통 훨씬 적어서 눈에 덜 띔).
+    private func daysInGrid(for monthStart: Date) -> [Date?] {
         guard let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
 
         let firstWeekday = calendar.component(.weekday, from: monthStart)
         let leadingBlanks = (firstWeekday - calendar.firstWeekday + 7) % 7
 
         var days: [Date?] = Array(repeating: nil, count: leadingBlanks)
+        var lastDay = monthStart
         for day in dayRange {
-            days.append(calendar.date(byAdding: .day, value: day - 1, to: monthStart))
+            lastDay = calendar.date(byAdding: .day, value: day - 1, to: monthStart) ?? lastDay
+            days.append(lastDay)
         }
 
-        let totalCells = padTo42 ? 42 : ((days.count + 6) / 7) * 7
-        if days.count < totalCells {
-            days.append(contentsOf: Array(repeating: nil, count: totalCells - days.count))
+        let totalCells = 42
+        while days.count < totalCells {
+            lastDay = calendar.date(byAdding: .day, value: 1, to: lastDay) ?? lastDay
+            days.append(lastDay)
         }
         return days
-    }
-
-    private func rowCount(for monthStart: Date) -> Int {
-        daysInGrid(for: monthStart, padTo42: false).count / 7
     }
 
     private static func gridHeight(forRows rows: Int) -> CGFloat {
@@ -428,27 +416,6 @@ public struct EvCalendarView: View {
     }
 }
 
-// MARK: - 달 스냅 (비균일 페이징) — 달마다 높이가 달라 커스텀 ScrollTargetBehavior로 처리
-
-private struct MonthSnapBehavior: ScrollTargetBehavior {
-    let offsets: [CGFloat]   // 오름차순 정렬된 각 달의 시작 y좌표
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        guard !offsets.isEmpty else { return }
-        let proposedY = target.rect.minY
-        var nearest = offsets[0]
-        var smallestDiff = abs(offsets[0] - proposedY)
-        for y in offsets {
-            let diff = abs(y - proposedY)
-            if diff < smallestDiff {
-                smallestDiff = diff
-                nearest = y
-            }
-        }
-        target.rect.origin.y = nearest
-    }
-}
-
 // MARK: - DayCell (커스텀 날짜 셀)
 
 private struct DayCell: View {
@@ -459,6 +426,7 @@ private struct DayCell: View {
     let maxTitles: Int
     let isToday: Bool
     let isSelected: Bool
+    var isDimmed: Bool = false
     let style: EvCalendarStyle?
 
     private var dayNumber: String {
@@ -517,5 +485,6 @@ private struct DayCell: View {
                         lineWidth: isSelected ? 2 : 0.5)
         )
         .contentShape(Rectangle())
+        .opacity(isDimmed ? 0.35 : 1)
     }
 }
