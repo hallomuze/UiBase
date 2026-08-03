@@ -93,11 +93,10 @@ public struct EvCalendarView: View {
     private let calendar = Calendar.current
     private static let rowHeight: CGFloat = DayCell.minHeight
     private static let rowSpacing: CGFloat = 2
-    private static let monthLabelHeight: CGFloat = 24
     private static let defaultPastMonths = 12
     private static let initialFutureMonths = 12
     private static let extendFutureBy = 12
-    private static let pageHeight: CGFloat = gridHeight(forRows: 6) + monthLabelHeight
+    private static let pageHeight: CGFloat = gridHeight(forRows: 6)
 
     /// - Parameters:
     ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
@@ -214,34 +213,26 @@ public struct EvCalendarView: View {
         }
     }
 
+    // 달마다 인라인 구분 라벨 없이 그리드만 표시 — 상단 큰 월 타이틀이 스크롤에 맞춰
+    // 갱신되므로 별도 라벨 공간을 예약할 필요가 없고, 요일 행과 날짜 사이 틈도 생기지 않는다.
     private func monthBlock(for monthStart: Date) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // 첫 달도 같은 높이를 갖도록 항상 라벨 자리를 확보(균일 페이징에 필요) —
-            // 큰 타이틀과 중복되지 않게 이번 인라인 라벨은 두 번째 달부터만 텍스트를 채운다.
-            Text(calendar.isDate(monthStart, equalTo: displayedMonth, toGranularity: .month)
-                 ? "" : (monthTitleProvider?(monthStart) ?? Self.defaultMonthTitle(monthStart, calendar: calendar)))
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(style.map { AnyShapeStyle($0.accent) } ?? AnyShapeStyle(.primary))
-                .padding(.leading, 4)
-                .frame(height: Self.monthLabelHeight, alignment: .bottomLeading)
-            LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
-                ForEach(Array(daysInGrid(for: monthStart).enumerated()), id: \.offset) { _, date in
-                    if let date {
-                        DayCell(
-                            date: date,
-                            items: items(on: date),
-                            maxTitles: maxTitlesPerDay,
-                            isToday: calendar.isDateInToday(date),
-                            isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
-                            style: style
-                        )
-                        .onTapGesture {
-                            selectedDate = date
-                            onDateTap?(date)
-                        }
-                    } else {
-                        Color.clear.frame(minHeight: DayCell.minHeight)
+        LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
+            ForEach(Array(daysInGrid(for: monthStart).enumerated()), id: \.offset) { _, date in
+                if let date {
+                    DayCell(
+                        date: date,
+                        items: items(on: date),
+                        maxTitles: maxTitlesPerDay,
+                        isToday: calendar.isDateInToday(date),
+                        isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                        style: style
+                    )
+                    .onTapGesture {
+                        selectedDate = date
+                        onDateTap?(date)
                     }
+                } else {
+                    Color.clear.frame(minHeight: DayCell.minHeight)
                 }
             }
         }
