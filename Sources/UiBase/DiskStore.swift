@@ -1,25 +1,60 @@
 import Foundation
 // MARK: - 디스크 저장소 (저장 방식 캡슐화. 나중에 방식 바꿔도 여기만 수정)
 
+/// EvDiskStore가 파일을 저장할 위치.
+public enum EvDiskStoreLocation: Sendable {
+    /// 사용자가 직접 볼 필요 없는 앱 데이터 (기본값)
+    case applicationSupport
+    /// Files 앱/파일 공유로 노출되어도 되는 데이터
+    case documents
+}
+
 public final class EvDiskStore<T: Codable>: Sendable {
-    
+
     private let filename: String
     private let fileURL: URL
+    private let directory: URL
+    private let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
+    private let dateDecodingStrategy: JSONDecoder.DateDecodingStrategy
 
-    public init(filename: String) {
+    public init(
+        filename: String,
+        location: EvDiskStoreLocation = .applicationSupport,
+        dateEncodingStrategy: JSONEncoder.DateEncodingStrategy = .deferredToDate,
+        dateDecodingStrategy: JSONDecoder.DateDecodingStrategy = .deferredToDate
+    ) {
         self.filename = filename
-        self.fileURL = Self.supportDirectory()
+        self.directory = Self.directoryURL(for: location)
+        self.fileURL = self.directory
             .appendingPathComponent(filename)
             .appendingPathExtension("json")
+        self.dateEncodingStrategy = dateEncodingStrategy
+        self.dateDecodingStrategy = dateDecodingStrategy
         #if DEBUG
         print("📁 저장 경로:", fileURL.path)   // ← 콘솔에서 실제 경로 확인 (디버그 전용)
         #endif
+    }
+
+    private static func directoryURL(for location: EvDiskStoreLocation) -> URL {
+        switch location {
+        case .applicationSupport: return supportDirectory()
+        case .documents: return documentsDirectory()
+        }
     }
 
     // Application Support 폴더 (없으면 생성)
     public static func supportDirectory() -> URL {
         let fm = FileManager.default
         let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.temporaryDirectory
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    // Documents 폴더 (없으면 생성)
+    public static func documentsDirectory() -> URL {
+        let fm = FileManager.default
+        let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -38,6 +73,7 @@ public final class EvDiskStore<T: Codable>: Sendable {
     public func saveThrowing(_ value: T) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted   // 사람이 읽기 좋게
+        encoder.dateEncodingStrategy = dateEncodingStrategy
         let data = try encoder.encode(value)
         try data.write(to: fileURL, options: [.atomic])
     }
@@ -46,7 +82,9 @@ public final class EvDiskStore<T: Codable>: Sendable {
     public func loadThrowing() throws -> T? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(T.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = dateDecodingStrategy
+        return try decoder.decode(T.self, from: data)
     }
 
     public func delete() {
@@ -62,7 +100,7 @@ extension EvDiskStore {
     // 백업 저장: baseName_yyyyMMdd_HHmmss.json 형식, 최대 maxBackups개 유지
     public func backup(_ value: T, maxBackups: Int = 10) {
         let fm = FileManager.default
-        let dir = Self.supportDirectory()
+        let dir = directory
 
         // 파일명용 타임스탬프 (예: 20260610_221034)
         let df = DateFormatter()
@@ -114,6 +152,35 @@ extension EvDiskStore {
                 try? fm.removeItem(at: url)
             }
         }
+    }
+
+    /// 복잡한 다중 백업이 필요 없을 때: 저장 전 기존 파일을 백업 슬롯(`{filename}_backup.json`)
+    /// 하나에만 복사해둔다. 이전 백업은 덮어써진다.
+    public func saveKeepingLastBackup(_ value: T) {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: fileURL.path) {
+            try? fm.removeItem(at: lastBackupURL)
+            try? fm.copyItem(at: fileURL, to: lastBackupURL)
+        }
+        save(value)
+    }
+
+    /// `saveKeepingLastBackup(_:)`이 남긴 단일 백업 슬롯을 읽는다.
+    public func loadKeptBackup() -> T? {
+        guard FileManager.default.fileExists(atPath: lastBackupURL.path) else { return nil }
+        guard let data = try? Data(contentsOf: lastBackupURL) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = dateDecodingStrategy
+        return try? decoder.decode(T.self, from: data)
+    }
+
+    /// 저장/로드에 쓰이는 실제 파일 경로. 디버그 화면 등에서 경로를 보여줄 때 사용.
+    public var currentFileURL: URL { fileURL }
+
+    private var lastBackupURL: URL {
+        directory
+            .appendingPathComponent("\(baseName)_backup")
+            .appendingPathExtension("json")
     }
 
 }
