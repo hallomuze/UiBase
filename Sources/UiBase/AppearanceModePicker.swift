@@ -13,7 +13,8 @@ public struct EvAppearanceModePicker: View {
     public var body: some View {
         Picker("테마", selection: $mode) {
             ForEach(EvAppearanceMode.allCases) { mode in
-                Text(mode.title).tag(mode)
+                // title(String) 이 아니라 titleKey 를 써야 앱 카탈로그에서 번역이 조회된다.
+                Text(mode.titleKey).tag(mode)
             }
         }
         .onChange(of: mode) { _, newValue in
