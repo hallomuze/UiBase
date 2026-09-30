@@ -54,6 +54,59 @@ public struct EvCalendarStyle {
     }
 }
 
+/// 달력의 크기와 간격을 호출하는 앱에서 조절하기 위한 레이아웃 토큰.
+/// 기본값은 기존 `EvCalendarView`의 모양과 크기를 그대로 유지한다.
+public struct EvCalendarMetrics: Sendable {
+    public var dayCellHeight: CGFloat
+    public var usesFixedDayCellHeight: Bool
+    public var dayNumberSize: CGFloat?
+    public var dayNumberCircleSize: CGFloat
+    public var eventTextSize: CGFloat
+    public var overflowTextSize: CGFloat
+    public var cellPadding: CGFloat
+    public var cellCornerRadius: CGFloat
+    public var rowSpacing: CGFloat
+    public var columnSpacing: CGFloat
+    public var eventHorizontalPadding: CGFloat
+    public var eventVerticalPadding: CGFloat
+    public var eventCornerRadius: CGFloat
+    public var cellContentSpacing: CGFloat
+
+    public init(
+        dayCellHeight: CGFloat = 64,
+        usesFixedDayCellHeight: Bool = false,
+        dayNumberSize: CGFloat? = nil,
+        dayNumberCircleSize: CGFloat = 20,
+        eventTextSize: CGFloat = 9,
+        overflowTextSize: CGFloat = 8,
+        cellPadding: CGFloat = 2,
+        cellCornerRadius: CGFloat = 6,
+        rowSpacing: CGFloat = 2,
+        columnSpacing: CGFloat = 2,
+        eventHorizontalPadding: CGFloat = 3,
+        eventVerticalPadding: CGFloat = 1,
+        eventCornerRadius: CGFloat = 3,
+        cellContentSpacing: CGFloat = 2
+    ) {
+        self.dayCellHeight = max(1, dayCellHeight)
+        self.usesFixedDayCellHeight = usesFixedDayCellHeight
+        self.dayNumberSize = dayNumberSize.map { max(1, $0) }
+        self.dayNumberCircleSize = max(1, dayNumberCircleSize)
+        self.eventTextSize = max(1, eventTextSize)
+        self.overflowTextSize = max(1, overflowTextSize)
+        self.cellPadding = max(0, cellPadding)
+        self.cellCornerRadius = max(0, cellCornerRadius)
+        self.rowSpacing = max(0, rowSpacing)
+        self.columnSpacing = max(0, columnSpacing)
+        self.eventHorizontalPadding = max(0, eventHorizontalPadding)
+        self.eventVerticalPadding = max(0, eventVerticalPadding)
+        self.eventCornerRadius = max(0, eventCornerRadius)
+        self.cellContentSpacing = max(0, cellContentSpacing)
+    }
+
+    public static let standard = EvCalendarMetrics()
+}
+
 /// 스와이프로 달을 넘기는 방향
 public enum EvCalendarSwipeAxis {
     case none, horizontal, vertical
@@ -80,6 +133,7 @@ public struct EvCalendarView: View {
     private let maxTitlesPerDay: Int
     private let swipeAxis: EvCalendarSwipeAxis
     private let style: EvCalendarStyle?
+    private let metrics: EvCalendarMetrics
     private let monthTitleProvider: ((Date) -> String)?
     private let headerAccessory: ((Date) -> String)?
     private let onDateTap: ((Date) -> Void)?
@@ -91,27 +145,12 @@ public struct EvCalendarView: View {
     @ObservedObject private var controller: EvCalendarController
 
     private let calendar = Calendar.current
-    private static let rowHeight: CGFloat = DayCell.minHeight
-    private static let rowSpacing: CGFloat = 2
     private static let defaultPastMonths = 12
     private static let initialFutureMonths = 12
     private static let extendFutureBy = 12
-    private static let pageHeight: CGFloat = gridHeight(forRows: 6)
 
-    /// - Parameters:
-    ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
-    ///   - minStartMonth: 과거로 이동 가능한 최소 달(이 달까지만 스크롤 가능). nil이면 최소
-    ///     `defaultPastMonths`(12개월) 전까지는 항상 이동 가능
-    ///   - items: 표시할 이벤트 목록
-    ///   - maxTitlesPerDay: 셀 하나에 표시할 최대 타이틀 개수 (2~3 권장, 기본 3)
-    ///   - swipeAxis: 달 이동 스와이프 방향 (기본 세로 — 애플 캘린더처럼 여러 달이 이어붙어
-    ///     연속 스크롤되다가 가장 가까운 달의 시작 지점으로 스냅됨. `.horizontal`/`.none`은
-    ///     기존처럼 그리드 한 장만 보여주고 좌우 스와이프 또는 버튼으로만 이동)
-    ///   - monthTitle: 헤더 좌측 타이틀 커스텀 (기본: "yyyy MMMM")
-    ///   - headerAccessory: 헤더 우측에 표시할 텍스트 (예: 월 합계). nil이면 표시 안 함
-    ///   - controller: "오늘로 이동" 등 외부 명령을 보낼 `EvCalendarController`. 안 넘기면
-    ///     내부적으로 하나 생성(외부에서 제어할 필요 없을 때는 신경 쓰지 않아도 됨).
-    ///   - onDateTap: 날짜 탭 콜백
+    /// 기존 레이아웃을 사용하는 호환 initializer. 모든 크기 값은 `.standard`와 동일하다.
+    @available(*, deprecated, message: "레이아웃 조절이 가능한 init(..., metrics:, ...)를 사용하세요.")
     public init(
         initialMonth: Date = Date(),
         minStartMonth: Date? = nil,
@@ -124,10 +163,54 @@ public struct EvCalendarView: View {
         controller: EvCalendarController = EvCalendarController(),
         onDateTap: ((Date) -> Void)? = nil
     ) {
+        self.init(
+            initialMonth: initialMonth,
+            minStartMonth: minStartMonth,
+            items: items,
+            maxTitlesPerDay: maxTitlesPerDay,
+            swipeAxis: swipeAxis,
+            style: style,
+            metrics: .standard,
+            monthTitle: monthTitle,
+            headerAccessory: headerAccessory,
+            controller: controller,
+            onDateTap: onDateTap
+        )
+    }
+
+    /// - Parameters:
+    ///   - initialMonth: 처음 표시할 월 (기본: 이번 달)
+    ///   - minStartMonth: 과거로 이동 가능한 최소 달(이 달까지만 스크롤 가능). nil이면 최소
+    ///     `defaultPastMonths`(12개월) 전까지는 항상 이동 가능
+    ///   - items: 표시할 이벤트 목록
+    ///   - maxTitlesPerDay: 셀 하나에 표시할 최대 타이틀 개수 (2~3 권장, 기본 3)
+    ///   - swipeAxis: 달 이동 스와이프 방향 (기본 세로 — 애플 캘린더처럼 여러 달이 이어붙어
+    ///     연속 스크롤되다가 가장 가까운 달의 시작 지점으로 스냅됨. `.horizontal`/`.none`은
+    ///     기존처럼 그리드 한 장만 보여주고 좌우 스와이프 또는 버튼으로만 이동)
+    ///   - metrics: 셀 높이, 글자 크기, 간격 등 레이아웃 토큰. 기본값은 기존 UI와 동일
+    ///   - monthTitle: 헤더 좌측 타이틀 커스텀 (기본: "yyyy MMMM")
+    ///   - headerAccessory: 헤더 우측에 표시할 텍스트 (예: 월 합계). nil이면 표시 안 함
+    ///   - controller: "오늘로 이동" 등 외부 명령을 보낼 `EvCalendarController`. 안 넘기면
+    ///     내부적으로 하나 생성(외부에서 제어할 필요 없을 때는 신경 쓰지 않아도 됨).
+    ///   - onDateTap: 날짜 탭 콜백
+    public init(
+        initialMonth: Date = Date(),
+        minStartMonth: Date? = nil,
+        items: [EvCalendarItem],
+        maxTitlesPerDay: Int = 3,
+        swipeAxis: EvCalendarSwipeAxis = .vertical,
+        style: EvCalendarStyle? = nil,
+        metrics: EvCalendarMetrics,
+        monthTitle: ((Date) -> String)? = nil,
+        headerAccessory: ((Date) -> String)? = nil,
+        controller: EvCalendarController = EvCalendarController(),
+        onDateTap: ((Date) -> Void)? = nil
+    ) {
         self.items = items
         self.maxTitlesPerDay = max(1, maxTitlesPerDay)
         self.swipeAxis = swipeAxis
         self.style = style
+        self.metrics = metrics
         self.monthTitleProvider = monthTitle
         self.headerAccessory = headerAccessory
         self.onDateTap = onDateTap
@@ -197,13 +280,13 @@ public struct EvCalendarView: View {
             LazyVStack(spacing: 0) {
                 ForEach(months, id: \.self) { month in
                     monthBlock(for: month)
-                        .frame(height: Self.pageHeight, alignment: .top)
+                        .frame(height: pageHeight, alignment: .top)
                         .id(month)
                 }
             }
             .scrollTargetLayout()
         }
-        .frame(height: Self.pageHeight)
+        .frame(height: pageHeight)
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $scrollTargetID, anchor: .top)
         .onChange(of: scrollTargetID) { _, newID in
@@ -216,7 +299,7 @@ public struct EvCalendarView: View {
     // 달마다 인라인 구분 라벨 없이 그리드만 표시 — 상단 큰 월 타이틀이 스크롤에 맞춰
     // 갱신되므로 별도 라벨 공간을 예약할 필요가 없고, 요일 행과 날짜 사이 틈도 생기지 않는다.
     private func monthBlock(for monthStart: Date) -> some View {
-        LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
+        LazyVGrid(columns: gridColumns, spacing: metrics.rowSpacing) {
             ForEach(Array(daysInGrid(for: monthStart).enumerated()), id: \.offset) { _, date in
                 if let date {
                     DayCell(
@@ -225,14 +308,15 @@ public struct EvCalendarView: View {
                         maxTitles: maxTitlesPerDay,
                         isToday: calendar.isDateInToday(date),
                         isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
-                        style: style
+                        style: style,
+                        metrics: metrics
                     )
                     .onTapGesture {
                         selectedDate = date
                         onDateTap?(date)
                     }
                 } else {
-                    Color.clear.frame(minHeight: DayCell.minHeight)
+                    emptyDayCell
                 }
             }
         }
@@ -319,11 +403,11 @@ public struct EvCalendarView: View {
     // MARK: 날짜 그리드 (.horizontal / .none 모드 — 그리드 한 장)
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+        Array(repeating: GridItem(.flexible(), spacing: metrics.columnSpacing), count: 7)
     }
 
     private var monthGrid: some View {
-        LazyVGrid(columns: gridColumns, spacing: Self.rowSpacing) {
+        LazyVGrid(columns: gridColumns, spacing: metrics.rowSpacing) {
             ForEach(Array(daysInGrid(for: displayedMonth).enumerated()), id: \.offset) { _, date in
                 if let date {
                     DayCell(
@@ -332,15 +416,15 @@ public struct EvCalendarView: View {
                         maxTitles: maxTitlesPerDay,
                         isToday: calendar.isDateInToday(date),
                         isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
-                        style: style
+                        style: style,
+                        metrics: metrics
                     )
                     .onTapGesture {
                         selectedDate = date
                         onDateTap?(date)
                     }
                 } else {
-                    Color.clear
-                        .frame(minHeight: DayCell.minHeight)
+                    emptyDayCell
                 }
             }
         }
@@ -386,8 +470,15 @@ public struct EvCalendarView: View {
         return days
     }
 
-    private static func gridHeight(forRows rows: Int) -> CGFloat {
-        CGFloat(rows) * rowHeight + CGFloat(max(0, rows - 1)) * rowSpacing
+    private var pageHeight: CGFloat {
+        CGFloat(6) * metrics.dayCellHeight + CGFloat(5) * metrics.rowSpacing
+    }
+
+    private var emptyDayCell: some View {
+        Color.clear.frame(
+            minHeight: metrics.dayCellHeight,
+            maxHeight: metrics.usesFixedDayCellHeight ? metrics.dayCellHeight : nil
+        )
     }
 
     private func items(on date: Date) -> [EvCalendarItem] {
@@ -404,14 +495,13 @@ public struct EvCalendarView: View {
 // MARK: - DayCell (커스텀 날짜 셀)
 
 private struct DayCell: View {
-    static let minHeight: CGFloat = 64
-
     let date: Date
     let items: [EvCalendarItem]
     let maxTitles: Int
     let isToday: Bool
     let isSelected: Bool
     let style: EvCalendarStyle?
+    let metrics: EvCalendarMetrics
 
     private var dayNumber: String {
         "\(Calendar.current.component(.day, from: date))"
@@ -425,46 +515,54 @@ private struct DayCell: View {
     private var selectedFill: Color {
         style?.selectedBackground ?? Color.accentColor.opacity(0.15)
     }
+    private var dayNumberFont: Font {
+        metrics.dayNumberSize.map { .system(size: $0) } ?? .caption
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: metrics.cellContentSpacing) {
             Text(dayNumber)
-                .font(.caption)
+                .font(dayNumberFont)
                 .fontWeight(isToday ? .bold : .regular)
                 .foregroundStyle(isToday ? Color.white : numberColor)
-                .frame(width: 20, height: 20)
+                .frame(width: metrics.dayNumberCircleSize, height: metrics.dayNumberCircleSize)
                 .background(isToday ? todayFill : Color.clear, in: Circle())
 
             ForEach(items.prefix(maxTitles)) { item in
                 Text(item.title)
-                    .font(.system(size: 9))
+                    .font(.system(size: metrics.eventTextSize))
                     .lineLimit(1)
                     .foregroundStyle(style?.pillText ?? .white)
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, metrics.eventHorizontalPadding)
+                    .padding(.vertical, metrics.eventVerticalPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(style?.pillBackground ?? item.color,
-                                in: RoundedRectangle(cornerRadius: 3))
+                                in: RoundedRectangle(cornerRadius: metrics.eventCornerRadius))
             }
 
             // 표시 못한 이벤트 개수
             if items.count > maxTitles {
                 Text("+\(items.count - maxTitles)")
-                    .font(.system(size: 8))
+                    .font(.system(size: metrics.overflowTextSize))
                     .foregroundStyle(style.map { AnyShapeStyle($0.subText) }
                                      ?? AnyShapeStyle(.secondary))
             }
 
             Spacer(minLength: 0)
         }
-        .padding(2)
-        .frame(maxWidth: .infinity, minHeight: Self.minHeight, alignment: .topLeading)
+        .padding(metrics.cellPadding)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: metrics.dayCellHeight,
+            maxHeight: metrics.usesFixedDayCellHeight ? metrics.dayCellHeight : nil,
+            alignment: .topLeading
+        )
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: metrics.cellCornerRadius)
                 .fill(isSelected ? selectedFill : Color.clear)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: metrics.cellCornerRadius)
                 .stroke(isSelected ? selectedBorder : normalBorder,
                         lineWidth: isSelected ? 2 : 0.5)
         )
