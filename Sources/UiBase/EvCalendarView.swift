@@ -134,6 +134,7 @@ public struct EvCalendarView: View {
     private let swipeAxis: EvCalendarSwipeAxis
     private let style: EvCalendarStyle?
     private let metrics: EvCalendarMetrics
+    private let locale: Locale
     private let monthTitleProvider: ((Date) -> String)?
     private let headerAccessory: ((Date) -> String)?
     private let onDateTap: ((Date) -> Void)?
@@ -144,7 +145,11 @@ public struct EvCalendarView: View {
     @State private var scrollTargetID: Date?
     @ObservedObject private var controller: EvCalendarController
 
-    private let calendar = Calendar.current
+    private var calendar: Calendar {
+        var calendar = Calendar.current
+        calendar.locale = locale
+        return calendar
+    }
     private static let defaultPastMonths = 12
     private static let initialFutureMonths = 12
     private static let extendFutureBy = 12
@@ -158,6 +163,7 @@ public struct EvCalendarView: View {
         maxTitlesPerDay: Int = 3,
         swipeAxis: EvCalendarSwipeAxis = .vertical,
         style: EvCalendarStyle? = nil,
+        locale: Locale = .current,
         monthTitle: ((Date) -> String)? = nil,
         headerAccessory: ((Date) -> String)? = nil,
         controller: EvCalendarController = EvCalendarController(),
@@ -171,6 +177,7 @@ public struct EvCalendarView: View {
             swipeAxis: swipeAxis,
             style: style,
             metrics: .standard,
+            locale: locale,
             monthTitle: monthTitle,
             headerAccessory: headerAccessory,
             controller: controller,
@@ -201,6 +208,7 @@ public struct EvCalendarView: View {
         swipeAxis: EvCalendarSwipeAxis = .vertical,
         style: EvCalendarStyle? = nil,
         metrics: EvCalendarMetrics,
+        locale: Locale = .current,
         monthTitle: ((Date) -> String)? = nil,
         headerAccessory: ((Date) -> String)? = nil,
         controller: EvCalendarController = EvCalendarController(),
@@ -211,6 +219,7 @@ public struct EvCalendarView: View {
         self.swipeAxis = swipeAxis
         self.style = style
         self.metrics = metrics
+        self.locale = locale
         self.monthTitleProvider = monthTitle
         self.headerAccessory = headerAccessory
         self.onDateTap = onDateTap
@@ -287,6 +296,10 @@ public struct EvCalendarView: View {
             .scrollTargetLayout()
         }
         .frame(height: pageHeight)
+        // 호출부가 컨테이너 측정 후 metrics를 갱신하면 페이지 높이가 달라진다. 이때 기존
+        // scroll offset을 재사용하면 첫 화면이 월 중간에 걸릴 수 있으므로 현재 target을
+        // 유지한 채 paging ScrollView만 새 높이로 다시 만든다.
+        .id(pageHeight)
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $scrollTargetID, anchor: .top)
         .onChange(of: scrollTargetID) { _, newID in
@@ -433,12 +446,17 @@ public struct EvCalendarView: View {
     // MARK: - Helpers
 
     private var monthTitle: String {
-        monthTitleProvider?(displayedMonth) ?? Self.defaultMonthTitle(displayedMonth, calendar: calendar)
+        monthTitleProvider?(displayedMonth) ?? Self.defaultMonthTitle(
+            displayedMonth,
+            calendar: calendar,
+            locale: locale
+        )
     }
 
-    private static func defaultMonthTitle(_ month: Date, calendar: Calendar) -> String {
+    private static func defaultMonthTitle(_ month: Date, calendar: Calendar, locale: Locale) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar
+        formatter.locale = locale
         formatter.dateFormat = "yyyy MMMM"
         return formatter.string(from: month)
     }
